@@ -34,11 +34,6 @@ object PureLambda {
     case App(t1, t2) => 1 + math.max(girth(t1), girth(t2))
   }
 
-  def intsFrom(i: Int): Stream[Int] = i #:: intsFrom(i+1)
-  val nats = intsFrom(0).map(_.toString)
-  // stdlib bug; should just use filterNot when they make lazy again
-  def freshVar(prohib: Set[String]) = nats.filter(!prohib(_)).head
-
   def freeVars(t: Exp): Set[String] = t match {
     case Var(name) => Set(name)
     case Lam(p, t) => freeVars(t) - p
