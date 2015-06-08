@@ -1,6 +1,6 @@
 package loco
 
-object PureLambda {
+object UntypedLambda {
   // for notational convenience
   sealed trait Exp {
     override def toString: String = this match {

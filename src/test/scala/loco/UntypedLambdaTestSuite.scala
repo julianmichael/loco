@@ -2,7 +2,7 @@ package loco
 
 import org.scalatest.FunSuite
 
-class PureLambdaTestSuite extends FunSuite {
+class UntypedLambdaTestSuite extends FunSuite {
   import PureLambda._
   import SampleExps._
 
