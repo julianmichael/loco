@@ -2,9 +2,9 @@ package loco
 
 import org.scalatest.FunSuite
 
-class TestSuite extends FunSuite {
+class PureLambdaTestSuite extends FunSuite {
   import PureLambda._
-  import ChurchEncodings._
+  import SampleExps._
 
   test("isValue") {
     assert(isValue(id) === true)
