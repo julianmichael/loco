@@ -2,8 +2,8 @@ package loco
 
 import org.scalatest.FunSuite
 
-class UntypedLambdaTestSuite extends FunSuite {
-  import PureLambda._
+class UntypedLambdaTest extends FunSuite {
+  import UntypedLambda._
   import SampleExps._
 
   test("isValue") {

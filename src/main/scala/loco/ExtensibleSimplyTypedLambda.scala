@@ -4,34 +4,24 @@ object ExtensibleSimplyTypedLambda {
   // In this file, I try to solve the Expression Problem.
   // I don't expect it to work.
 
-  // Simply-typed lambda calculus with functions, products,
-  // conditionals, unit, and bools.
-  // Call-by-value.
-  // ints were too much extra code; should just be included later
-  // in the "extensible" variant that is to follow.
-  // coproducts require those pesky annotations
-  // because we don't have subtyping/Top or type inference
-  // so I decided to nix them too.
-
-
   case class TypeError(message: String)
 
-  // TODO fix this issue
-  sealed trait Type
-  case class TFunc(a: Type, b: Type) extends Type
-  case class TProd(a: Type, b: Type) extends Type
-  // case class TSum(a: Type, b: Type) extends Type
-  case object TUnit extends Type
-  case object TBool extends Type
-  // case object TInt extends Type
-
-  type TypeCheck = Either[TypeError, Type]
-  type Environment = Map[String, Type]
-
-  abstract class GlobalExpSpec(
+  case class GlobalExpSpec(
     expSpecMakers: List[(GlobalExpSpec => ExpSpec)]) {
 
-    val expSpecs = expSpecMakers.map(_.apply(this))
+    val expSpecs: Set[ExpSpec] = {
+      val expSpecQueue = collection.mutable.Set.empty[ExpSpec]
+      expSpecQueue ++= expSpecMakers.map(_.apply(this))
+      val allExpSpecs = collection.mutable.Set.empty[ExpSpec]
+      while(!expSpecQueue.isEmpty) {
+        val next = expSpecQueue.head
+        if(!allExpSpecs(next)) {
+          allExpSpecs += next
+          expSpecQueue ++= next.dependencies
+        }
+      }
+      allExpSpecs.toSet
+    }
 
     // this crazy thing is to work around the fact that
     // constructors can't have dependent method types
@@ -55,6 +45,7 @@ object ExtensibleSimplyTypedLambda {
       val expSpec = thisExpSpec
       val typ = thisType.asInstanceOf[expSpec.T]
     }
+
     type TypeCheck = Either[TypeError, Type]
     type Environment = Map[String, Type]
 
@@ -94,12 +85,14 @@ object ExtensibleSimplyTypedLambda {
   }
 
   abstract class ExpSpec(val g: GlobalExpSpec) {
+    val dependencies: List[ExpSpec] = Nil
+
     type E // the type of expressions
-    type T // the type of the new types
+    type T // the type of the new types (if any; otherwise g.Type)
 
     // convenience method
-    def makeExp(e: E): g.Exp = g.makeExp(this)(e)
-    def makeType(t: T): g.Type = g.makeType(this)(t)
+    final def makeExp(e: E): g.Exp = g.makeExp(this)(e)
+    final def makeType(t: T): g.Type = g.makeType(this)(t)
 
     def isValue(e: E): Boolean
     def freeVars(e: E): Set[String]
@@ -141,8 +134,9 @@ object ExtensibleSimplyTypedLambda {
   }
 
   case class FuncSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
-    // TODO depends on Var
     private[this] val innerVarSpec = VarSpec(g)
+    override val dependencies = List(innerVarSpec)
+
     sealed trait FuncTerm
     case class Lam(param: String, paramType: g.Type, body: g.Exp) extends FuncTerm
     case class App(t1: g.Exp, t2: g.Exp) extends FuncTerm
@@ -276,8 +270,9 @@ object ExtensibleSimplyTypedLambda {
   }
 
   case class CondSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
-    // TODO depends on bool
     private[this] val innerBoolSpec = BoolSpec(g)
+    override val dependencies = List(innerBoolSpec)
+
     case class Cond(cond: g.Exp, body: g.Exp, otherwise: g.Exp)
 
     type E = Cond
@@ -320,6 +315,23 @@ object ExtensibleSimplyTypedLambda {
     def toString(e: E): String = e match {
       case Cond(c, b, ow) => s"if $c then $b else $ow"
     }
+  }
+
+  case class UnitSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
+    case object Unit // denotes both the type and the term because why not
+
+    type E = Unit.type
+    type T = Unit.type
+
+    def isValue(e: E): Boolean = true
+    def freeVars(e: E): Set[String] = Set.empty[String]
+    def substitute(sub: g.Exp, name: String, target: E): g.Exp = makeExp(Unit)
+
+    def typeWithEnv(env: g.Environment, t: E): g.TypeCheck = Right(makeType(Unit))
+
+    def step(t: E): g.Exp = ???
+
+    def toString(e: E): String = "()"
   }
 
   case class ProdSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -391,154 +403,200 @@ object ExtensibleSimplyTypedLambda {
   }
 
 
-  sealed trait Exp {
-    override def toString: String = this match {
-      /*
-      case Inl(t) => s"inl $t"
-      case Inr(t) => s"inr $t"
+  case class CoprodSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
+    private[this] val innerVarSpec = VarSpec(g)
+    override val dependencies = List(innerVarSpec)
+
+    sealed trait CoprodExp
+    case class Inl(t: g.Exp, rType: g.Type) extends CoprodExp
+    case class Inr(t: g.Exp, lType: g.Type) extends CoprodExp
+    case class Case(t: g.Exp, lName: String, lBody: g.Exp,
+                          rName: String, rBody: g.Exp) extends CoprodExp
+
+    case class TCoprod(t1: g.Type, t2: g.Type)
+
+    type E = CoprodExp
+    type T = TCoprod
+
+    def isValue(e: E): Boolean = e match {
+      case Inl(v, _) => g.isValue(v)
+      case Inr(v, _) => g.isValue(v)
+      case _ => false
+    }
+
+    def freeVars(e: E): Set[String] = e match {
+      case Inl(t, _) => g.freeVars(t)
+      case Inr(t, _) => g.freeVars(t)
+      case Case(t, lName, lBody, rName, rBody) =>
+        g.freeVars(t) ++ (g.freeVars(lBody) - lName) ++ (g.freeVars(rBody) - rName)
+    }
+
+    private[this] def alpha(prohib: Set[String], cas: Case): Case = cas match {
+      case Case(t, lName, lBody, rName, rBody) =>
+        val newName = freshVar(prohib)
+        val (newLName, newLBody) =
+          if(prohib(lName)) {
+            (newName,
+             g.substitute(
+               innerVarSpec.makeExp(innerVarSpec.Var(newName)).asInstanceOf[g.Exp],
+               lName,
+               lBody))
+          } else {
+            (lName, lBody)
+          }
+        val (newRName, newRBody) =
+          if(prohib(rName)) {
+            (newName,
+             g.substitute(
+               innerVarSpec.makeExp(innerVarSpec.Var(newName)).asInstanceOf[g.Exp],
+               rName,
+               rBody))
+          } else {
+            (rName, rBody)
+          }
+        Case(t, newLName, newLBody, newRName, newRBody)
+    }
+
+
+    def substitute(sub: g.Exp, name: String, target: E): g.Exp = {
+      def doSub(x: g.Exp) = g.substitute(sub, name, x)
+      target match {
+        case Inl(t, rType) => makeExp(Inl(doSub(t), rType))
+        case Inr(t, lType) => makeExp(Inr(doSub(t), lType))
+        case c@Case(_, _, _, _, _) =>
+          val Case(t, lName, lBody, rName, rBody) =
+            alpha(g.freeVars(sub) ++ freeVars(c), c)
+          makeExp(Case(t, lName, doSub(lBody), rName, doSub(rBody)))
+      }
+    }
+
+    def typeWithEnv(env: g.Environment, t: E): g.TypeCheck = t match {
+      case Inl(t, rType) => for {
+        lType <- g.typeWithEnv(env, t).right
+      } yield makeType(TCoprod(lType, rType))
+      case Inr(t, lType) => for {
+        rType <- g.typeWithEnv(env, t).right
+      } yield makeType(TCoprod(lType, rType))
+      case Case(t, lName, lBody, rName, rBody) => for {
+        termType <- g.typeWithEnv(env, t).right
+        typePair <- (termType.typ match {
+          case TCoprod(lType, rType) => Right((lType, rType))
+          case x => Left(TypeError(s"cannot take case of type $x"))
+        }).right
+        lBodyType <- g.typeWithEnv(env + (lName -> typePair._1), lBody).right
+        rBodyType <- g.typeWithEnv(env + (rName -> typePair._2), rBody).right
+        _ <- (if(lBodyType == rBodyType) Right(lBodyType)
+             else Left(TypeError(
+               s"cases (${lBodyType.typ} and ${rBodyType.typ}) do not match"))).right
+      } yield lBodyType
+    }
+
+    def step(e: E): g.Exp = e match {
+      case Inl(t, rType) if !g.isValue(t) => makeExp(Inl(g.step(t), rType))
+      case Inr(t, lType) if !g.isValue(t) => makeExp(Inr(g.step(t), lType))
+      case Case(t, lName, lBody, rName, rBody) if !g.isValue(t) =>
+        makeExp(Case(g.step(t), lName, lBody, rName, rBody))
+      case Case(v, lName, lBody, rName, rBody) => v.exp match {
+        case Inl(t, _) => g.substitute(t, lName, lBody)
+        case Inr(t, _) => g.substitute(t, rName, rBody)
+      }
+    }
+
+    def toString(e: E): String = e match {
+      case Inl(t, rType) => s"inl $t: (_ + $rType)"
+      case Inr(t, lType) => s"inr $t: ($lType + _)"
       case Case(t, lName, lBody, rName, rBody) =>
         s"case $t of (inl $lName => $lBody) (inr $rName => $rBody)"
-      */
-      case Unit => "()"
-      /*
+    }
+  }
+
+  case class IntSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
+
+    sealed trait IntExp
+    case class IntLiteral(n: Int) extends IntExp
+    case class Plus(a: g.Exp, b: g.Exp) extends IntExp
+    case class Minus(a: g.Exp, b: g.Exp) extends IntExp
+    case class Times(a: g.Exp, b: g.Exp) extends IntExp
+    case class Div(a: g.Exp, b: g.Exp) extends IntExp
+
+    case object TInt
+
+    type E = IntExp
+    type T = TInt.type
+
+    def isValue(e: E): Boolean = e match {
+      case IntLiteral(_) => true
+      case _ => false
+    }
+
+    def freeVars(e: E): Set[String] = e match {
+      case Plus(a, b) => g.freeVars(a) ++ g.freeVars(b)
+      case Minus(a, b) => g.freeVars(a) ++ g.freeVars(b)
+      case Times(a, b) => g.freeVars(a) ++ g.freeVars(b)
+      case Div(a, b) => g.freeVars(a) ++ g.freeVars(b)
+      case _ => Set.empty[String]
+    }
+
+    def substitute(sub: g.Exp, name: String, target: E): g.Exp = {
+      def doSub(x: g.Exp) = g.substitute(sub, name, x)
+      target match {
+        case Plus(a, b) => makeExp(Plus(doSub(a), doSub(b)))
+        case Minus(a, b) => makeExp(Minus(doSub(a), doSub(b)))
+        case Times(a, b) => makeExp(Times(doSub(a), doSub(b)))
+        case Div(a, b) => makeExp(Div(doSub(a), doSub(b)))
+        case i@IntLiteral(_) => makeExp(i)
+      }
+    }
+
+    def typeWithEnv(env: g.Environment, t: E): g.TypeCheck = {
+      def opType(a: g.Exp, b: g.Exp, s: String): g.TypeCheck = for {
+        aType <- g.typeWithEnv(env, a).right
+        bType <- g.typeWithEnv(env, b).right
+        result <- (if(this == aType.expSpec && this == bType.expSpec) {
+          Right(makeType(TInt))
+        } else {
+          Left(TypeError(s"cannot $s ${aType.typ} and ${bType.typ}"))
+        }).right
+      } yield result
+
+      t match {
+        case IntLiteral(_) => Right(makeType(TInt))
+        case Plus(a, b) => opType(a, b, "add")
+        case Minus(a, b) => opType(a, b, "subtract")
+        case Times(a, b) => opType(a, b, "multiply")
+        case Div(a, b) => opType(a, b, "divide")
+      }
+    }
+
+    def step(t: E): g.Exp = t match {
+      case Plus(t1, t2) if !g.isValue(t1) => makeExp(Plus(g.step(t1), t2))
+      case Plus(v1, t2) if !g.isValue(t2) => makeExp(Plus(v1, g.step(t2)))
+      case Plus(v1, v2) => (v1.exp, v2.exp) match {
+        case (IntLiteral(i), IntLiteral(j)) => makeExp(IntLiteral(i + j))
+      }
+      case Minus(t1, t2) if !g.isValue(t1) => makeExp(Minus(g.step(t1), t2))
+      case Minus(v1, t2) if !g.isValue(t2) => makeExp(Minus(v1, g.step(t2)))
+      case Minus(v1, v2) => (v1.exp, v2.exp) match {
+        case (IntLiteral(i), IntLiteral(j)) => makeExp(IntLiteral(i - j))
+      }
+      case Times(t1, t2) if !g.isValue(t1) => makeExp(Times(g.step(t1), t2))
+      case Times(v1, t2) if !g.isValue(t2) => makeExp(Times(v1, g.step(t2)))
+      case Times(v1, v2) => (v1.exp, v2.exp) match {
+        case (IntLiteral(i), IntLiteral(j)) => makeExp(IntLiteral(i * j))
+      }
+      case Div(t1, t2) if !g.isValue(t1) => makeExp(Div(g.step(t1), t2))
+      case Div(v1, t2) if !g.isValue(t2) => makeExp(Div(v1, g.step(t2)))
+      case Div(v1, v2) => (v1.exp, v2.exp) match {
+        case (IntLiteral(i), IntLiteral(j)) => makeExp(IntLiteral(i / j))
+      }
+    }
+
+    def toString(e: E): String = e match {
       case IntLiteral(i) => s"$i"
       case Plus(a, b) => s"$a + $b"
       case Minus(a, b) => s"$a - $b"
       case Times(a, b) => s"$a * $b"
       case Div(a, b) => s"$a / $b"
-      */
     }
   }
-
-  // coproducts
-  /*
-  case class Inl(t: Exp) extends Exp
-  case class Inr(t: Exp) extends Exp
-  case class Case(t: Exp, lName: String, lBody: Exp,
-                          rName: String, rBody: Exp) extends Exp
-  */
-  // unit
-  case object Unit extends Exp
-  // ints
-  /*
-  case class IntLiteral(n: Int) extends Exp
-  case class Plus(a: Exp, b: Exp) extends Exp
-  case class Minus(a: Exp, b: Exp) extends Exp
-  case class Times(a: Exp, b: Exp) extends Exp
-  case class Div(a: Exp, b: Exp) extends Exp
-  */
-
-  def isValue(t: Exp): Boolean = t match {
-    // case Inl(v) => isValue(v)
-    // case Inr(v) => isValue(v)
-    case Unit => true
-    // case IntLiteral(_) => true
-    case _ => false
-  }
-
-  /* Implement if I end up needing it
-  def girth(t: Exp): Int = t match {
-    case Var(_) => 1
-    case Lam(_, t1) => 1 + girth(t1)
-    case App(t1, t2) => 1 + girth(t1) + girth(t2)
-  }
-
-  def size(t: Exp): Int = t match {
-    case Var(_) => 1
-    case Lam(_, t1) => 1 + size(t1)
-    case App(t1, t2) => 1 + math.max(girth(t1), girth(t2))
-  }
-  */
-
-  def freeVars(t: Exp): Set[String] = t match {
-    /*
-    case Inl(t) => freeVars(t)
-    case Inr(t) => freeVars(t)
-    case Case(t, lName, lBody, rName, rBody) =>
-      freeVars(t) ++ freeVars(lBody) ++ freeVars(rBody)
-
-    case Plus(a, b) => freeVars(a) ++ freeVars(b)
-    case Minus(a, b) => freeVars(a) ++ freeVars(b)
-    case Times(a, b) => freeVars(a) ++ freeVars(b)
-    case Div(a, b) => freeVars(a) ++ freeVars(b)
-    */
-    // bool, int literals; unit
-    case _ => Set.empty[String]
-  }
-
-  /*
-  def alpha(prohib: Set[String], cas: Case): Case = cas match {
-    case Case(t, lName, lBody, rName, rBody) =>
-      val newName = freshVar(prohib)
-      val (newLName, newLBody) =
-        if(prohib(lName)) {
-          (newName, substitute(Var(newName), lName, lBody))
-        } else {
-          (lName, lBody)
-        }
-      val (newRName, newRBody) =
-        if(prohib(rName)) {
-          (newName, substitute(Var(newName), rName, rBody))
-        } else {
-          (rName, rBody)
-        }
-      Case(t, newLName, newLBody, newRName, newRBody)
-  }
-  */
-
-  // as of here I stopped trying to implement ints.
-
-  // substitute `sub` for `name` in `target`
-  def substitute(sub: Exp, name: String, target: Exp): Exp = {
-    def doSub(x: Exp) = substitute(sub, name, x)
-    target match {
-      /*
-      case Inl(t) => Inl(doSub(t))
-      case Inr(t) => Inr(doSub(t))
-      case c@Case(_, _, _, _, _) =>
-        val Case(t, lName, lBody, rName, rBody) =
-          alpha(freeVars(sub) ++ freeVars(c), c)
-        Case(t, lName, doSub(lBody), rName, doSub(rBody))
-      */
-      case Unit => Unit
-    }
-  }
-
-  // as of here I stopped trying to implement coproducts
-  // (because I realized we need the annotations)
-
-  def typeof(t: Exp): TypeCheck = typeWithEnv(Map.empty[String, Type], t)
-  def typeWithEnv(env: Environment, t: Exp): TypeCheck = t match {
-    case Unit => Right(TUnit)
-  }
-
-  /*
-  def bigStepEval(t: Exp): Exp = t match {
-    case v if isValue(v) => v
-    case App(t1, t2) => {
-      val v1 = bigStepEval(t1)
-      val v2 = bigStepEval(t2)
-      (v1: @unchecked) match {
-        case Lam(p, t) => {
-          println(s"$v1 $v2")
-          bigStepEval(substitute(t, p, v2))
-        }
-        // otherwise we're stuck (free variable) or looping
-      }
-    }
-  }
-
-  def superEval(t: Exp): Exp = t match {
-    case v@Var(_) => v
-    case l@Lam(p, t1) => Lam(p, superEval(t1))
-    case App(t1, t2) => {
-      val v1 = superEval(t1)
-      val v2 = superEval(t2)
-      (v1: @unchecked) match {
-        case Lam(p, tt) => superEval(substitute(tt, p, v2))
-        case _ => App(v1, v2)
-      }
-    }
-  }
-  */
 }
