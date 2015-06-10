@@ -1,8 +1,14 @@
 package loco
 
+
 object ExtensibleSimplyTypedLambda {
   // In this file, I try to solve the Expression Problem.
   // I don't expect it to work.
+
+  import ExtensibleSimplyTypedLambdaParsing._
+  import molt.syntax.cfg.parsable._
+  import molt.syntax.cfg._
+
 
   case class TypeError(message: String)
 
@@ -82,6 +88,8 @@ object ExtensibleSimplyTypedLambda {
       }
       term
     }
+
+    val parser: CFGParsable[Exp] = makeExpParser(this)
   }
 
   abstract class ExpSpec(val g: GlobalExpSpec) {
@@ -103,6 +111,8 @@ object ExtensibleSimplyTypedLambda {
     def step(t: E): g.Exp
 
     def toString(e: E): String
+
+    val parser: CFGParsable[g.Exp]
   }
 
   case class VarSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -131,6 +141,8 @@ object ExtensibleSimplyTypedLambda {
     def step(t: E): g.Exp = ???
 
     override def toString(e: E): String = e match { case Var(x) => x }
+
+    val parser = ???
   }
 
   case class FuncSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -200,6 +212,8 @@ object ExtensibleSimplyTypedLambda {
       case Lam(p, typ, body) => s"(\\$p: $typ. $body)"
       case App(t1, t2) => s"($t1 $t2)"
     }
+
+    val parser = ???
   }
 
   case class BoolSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -267,6 +281,8 @@ object ExtensibleSimplyTypedLambda {
       case And(a, b) => s"$a && $b"
       case Or(a, b) => s"$a || $b"
     }
+
+    val parser = ???
   }
 
   case class CondSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -315,6 +331,8 @@ object ExtensibleSimplyTypedLambda {
     def toString(e: E): String = e match {
       case Cond(c, b, ow) => s"if $c then $b else $ow"
     }
+
+    val parser = ???
   }
 
   case class UnitSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -332,6 +350,8 @@ object ExtensibleSimplyTypedLambda {
     def step(t: E): g.Exp = ???
 
     def toString(e: E): String = "()"
+
+    val parser = ???
   }
 
   case class ProdSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -400,6 +420,8 @@ object ExtensibleSimplyTypedLambda {
       case Pi1(t) => s"π1 $t"
       case Pi2(t) => s"π2 $t"
     }
+
+    val parser = ???
   }
 
 
@@ -508,6 +530,8 @@ object ExtensibleSimplyTypedLambda {
       case Case(t, lName, lBody, rName, rBody) =>
         s"case $t of (inl $lName => $lBody) (inr $rName => $rBody)"
     }
+
+    val parser = ???
   }
 
   case class IntSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -598,5 +622,7 @@ object ExtensibleSimplyTypedLambda {
       case Times(a, b) => s"$a * $b"
       case Div(a, b) => s"$a / $b"
     }
+
+    val parser = ???
   }
 }
