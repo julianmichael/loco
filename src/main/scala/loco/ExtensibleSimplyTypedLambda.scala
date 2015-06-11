@@ -456,8 +456,8 @@ object ExtensibleSimplyTypedLambda {
       case TProd(t1, t2) => s"$t1 x t2"
     }
 
-    val expParser: CFGParsable[E] = ???
-    val typeParser: Option[CFGParsable[T]] = ???
+    val expParser: CFGParsable[E] = makeProdExpParser(this)
+    val typeParser: Option[CFGParsable[T]] = Some(makeProdTypeParser(this))
   }
 
 
@@ -570,8 +570,8 @@ object ExtensibleSimplyTypedLambda {
       case TCoprod(t1, t2) => s"$t1 + t2"
     }
 
-    val expParser: CFGParsable[E] = ???
-    val typeParser: Option[CFGParsable[T]] = ???
+    val expParser: CFGParsable[E] = makeCoprodExpParser(this)
+    val typeParser: Option[CFGParsable[T]] = Some(makeCoprodTypeParser(this))
   }
 
   case class IntSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {

@@ -137,4 +137,54 @@ object ExtensibleSimplyTypedLambdaParsing {
     )
   }
 
+  def makeProdExpParser(spec: ProdSpec): ComplexCFGParsable[spec.E] =
+      new ComplexCFGParsable[spec.E] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.E])] = Map(
+      List(Terminal("("), spec.g.expParser, Terminal(","), spec.g.expParser, Terminal(")")) -> (c => for {
+        t1 <- spec.g.expParser.fromAST(c(1))
+        t2 <- spec.g.expParser.fromAST(c(3))
+      } yield spec.Pair(t1, t2)),
+      List(Terminal("π1"), spec.g.expParser) -> (c => for {
+        t <- spec.g.expParser.fromAST(c(1))
+      } yield spec.Pi1(t)),
+      List(Terminal("π2"), spec.g.expParser) -> (c => for {
+        t <- spec.g.expParser.fromAST(c(1))
+      } yield spec.Pi2(t))
+    )
+  }
+
+  def makeProdTypeParser(spec: ProdSpec): ComplexCFGParsable[spec.T] =
+      new ComplexCFGParsable[spec.T] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.T])] = Map(
+      List(spec.g.typeParser, Terminal("x"), spec.g.typeParser) -> (c => for {
+        t1 <- spec.g.typeParser.fromAST(c(0))
+        t2 <- spec.g.typeParser.fromAST(c(2))
+      } yield spec.TProd(t1,t2))
+    )
+  }
+
+  def makeCoprodExpParser(spec: CoprodSpec): ComplexCFGParsable[spec.E] =
+      new ComplexCFGParsable[spec.E] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.E])] = Map(
+      List(Terminal("inl"), spec.g.expParser, Terminal(":"), Terminal("_"), Terminal("+"), spec.g.typeParser) -> (c => for {
+        term <- spec.g.expParser.fromAST(c(1))
+        rType <- spec.g.typeParser.fromAST(c(5))
+      } yield spec.Inl(term, rType)),
+      List(Terminal("inr"), spec.g.expParser, Terminal(":"), Terminal("_"), Terminal("+"), spec.g.typeParser) -> (c => for {
+        term <- spec.g.expParser.fromAST(c(1))
+        lType <- spec.g.typeParser.fromAST(c(5))
+      } yield spec.Inr(term, lType))
+    )
+  }
+
+  def makeCoprodTypeParser(spec: CoprodSpec): ComplexCFGParsable[spec.T] =
+      new ComplexCFGParsable[spec.T] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.T])] = Map(
+      List(spec.g.typeParser, Terminal("+"), spec.g.typeParser) -> (c => for {
+        t1 <- spec.g.typeParser.fromAST(c(0))
+        t2 <- spec.g.typeParser.fromAST(c(2))
+      } yield spec.TCoprod(t1,t2))
+    )
+  }
+
 }

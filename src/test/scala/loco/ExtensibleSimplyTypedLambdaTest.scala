@@ -11,7 +11,9 @@ class ExtensibleSimplyTypedLambdaTest extends FunSuite {
       VarSpec,
       FuncSpec,
       UnitSpec,
-      BoolSpec))
+      BoolSpec,
+      ProdSpec,
+      CoprodSpec))
     implicit val parser = g.expParser
     type Exp = g.Exp
     val neg = parseForced[Exp]("(\\ x : Bool . !!x) False")
