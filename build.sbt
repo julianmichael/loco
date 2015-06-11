@@ -10,4 +10,6 @@ libraryDependencies ++= Seq(
   "org.scalaz" %% "scalaz-core" % "7.1.2"
 )
 
+testOptions in Test += Tests.Argument("-oF")
+
 // scalacOptions ++= Seq("-feature", "-language:higherKinds")

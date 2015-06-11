@@ -15,12 +15,13 @@ object ExtensibleSimplyTypedLambda {
   case class GlobalExpSpec(
     expSpecMakers: List[(GlobalExpSpec => ExpSpec)]) {
 
-    val expSpecs: Set[ExpSpec] = {
+    lazy val expSpecs: Set[ExpSpec] = {
       val expSpecQueue = collection.mutable.Set.empty[ExpSpec]
       expSpecQueue ++= expSpecMakers.map(_.apply(this))
       val allExpSpecs = collection.mutable.Set.empty[ExpSpec]
       while(!expSpecQueue.isEmpty) {
         val next = expSpecQueue.head
+        expSpecQueue -= next
         if(!allExpSpecs(next)) {
           allExpSpecs += next
           expSpecQueue ++= next.dependencies
@@ -34,7 +35,7 @@ object ExtensibleSimplyTypedLambda {
     sealed trait Exp {
       val expSpec: ExpSpec
       val exp: expSpec.E
-      override def toString: String = expSpec.toString(exp)
+      override def toString: String = expSpec.toStringExp(exp)
     }
     def makeExp(thisExpSpec: ExpSpec)(thisExp: thisExpSpec.E) = new Exp {
       val expSpec = thisExpSpec
@@ -46,6 +47,7 @@ object ExtensibleSimplyTypedLambda {
     sealed trait Type {
       val expSpec: ExpSpec
       val typ: expSpec.T
+      override def toString: String = expSpec.toStringType(typ)
     }
     def makeType(thisExpSpec: ExpSpec)(thisType: thisExpSpec.T) = new Type {
       val expSpec = thisExpSpec
@@ -89,7 +91,8 @@ object ExtensibleSimplyTypedLambda {
       term
     }
 
-    val parser: CFGParsable[Exp] = makeExpParser(this)
+    val expParser: CFGParsable[Exp] = makeExpParser(this)
+    val typeParser: CFGParsable[Type] = makeTypeParser(this)
   }
 
   abstract class ExpSpec(val g: GlobalExpSpec) {
@@ -110,9 +113,11 @@ object ExtensibleSimplyTypedLambda {
 
     def step(t: E): g.Exp
 
-    def toString(e: E): String
+    def toStringExp(e: E): String
+    def toStringType(t: T): String
 
-    val parser: CFGParsable[g.Exp]
+    val expParser: CFGParsable[E]
+    val typeParser: Option[CFGParsable[T]]
   }
 
   case class VarSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -140,9 +145,11 @@ object ExtensibleSimplyTypedLambda {
 
     def step(t: E): g.Exp = ???
 
-    override def toString(e: E): String = e match { case Var(x) => x }
+    override def toStringExp(e: E): String = e match { case Var(x) => x }
+    def toStringType(t: T): String = t.toString
 
-    val parser = ???
+    val expParser: CFGParsable[E] = makeVarExpParser(this)
+    val typeParser: Option[CFGParsable[T]] = None
   }
 
   case class FuncSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -208,12 +215,16 @@ object ExtensibleSimplyTypedLambda {
       }
     }
 
-    override def toString(e: E): String = e match {
+    override def toStringExp(e: E): String = e match {
       case Lam(p, typ, body) => s"(\\$p: $typ. $body)"
       case App(t1, t2) => s"($t1 $t2)"
     }
+    def toStringType(t: T): String = t match {
+      case TFunc(t1, t2) => s"$t1 -> t2"
+    }
 
-    val parser = ???
+    val expParser: CFGParsable[E] = makeFuncExpParser(this)
+    val typeParser: Some[CFGParsable[T]] = Some(makeFuncTypeParser(this))
   }
 
   case class BoolSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -276,13 +287,15 @@ object ExtensibleSimplyTypedLambda {
     }
     })
 
-    def toString(e: E): String = e match {
+    def toStringExp(e: E): String = e match {
       case BoolLiteral(b) => s"$b"
       case And(a, b) => s"$a && $b"
       case Or(a, b) => s"$a || $b"
     }
+    def toStringType(t: T): String = "Bool"
 
-    val parser = ???
+    val expParser: CFGParsable[E] = ???
+    val typeParser: Option[CFGParsable[T]] = ???
   }
 
   case class CondSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -328,30 +341,35 @@ object ExtensibleSimplyTypedLambda {
       }
     }
 
-    def toString(e: E): String = e match {
+    def toStringExp(e: E): String = e match {
       case Cond(c, b, ow) => s"if $c then $b else $ow"
     }
+    def toStringType(t: T): String = t.toString
 
-    val parser = ???
+    val expParser: CFGParsable[E] = ???
+    val typeParser: Option[CFGParsable[T]] = ???
   }
 
   case class UnitSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
-    case object Unit // denotes both the type and the term because why not
+    case object Unit
+    case object TUnit
 
     type E = Unit.type
-    type T = Unit.type
+    type T = TUnit.type
 
     def isValue(e: E): Boolean = true
     def freeVars(e: E): Set[String] = Set.empty[String]
     def substitute(sub: g.Exp, name: String, target: E): g.Exp = makeExp(Unit)
 
-    def typeWithEnv(env: g.Environment, t: E): g.TypeCheck = Right(makeType(Unit))
+    def typeWithEnv(env: g.Environment, t: E): g.TypeCheck = Right(makeType(TUnit))
 
     def step(t: E): g.Exp = ???
 
-    def toString(e: E): String = "()"
+    def toStringExp(e: E): String = "()"
+    def toStringType(t: T): String = "Unit"
 
-    val parser = ???
+    val expParser: CFGParsable[E] = makeUnitExpParser(this)
+    val typeParser: Some[CFGParsable[T]] = Some(makeUnitTypeParser(this))
   }
 
   case class ProdSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -415,13 +433,17 @@ object ExtensibleSimplyTypedLambda {
       case Pi2(v) => v.exp match { case Pair(v1, v2) => v2 }
     }
 
-    def toString(e: E): String = e match {
+    def toStringExp(e: E): String = e match {
       case Pair(t1, t2) => s"($t1, $t2)"
       case Pi1(t) => s"π1 $t"
       case Pi2(t) => s"π2 $t"
     }
+    def toStringType(t: T): String = t match {
+      case TProd(t1, t2) => s"$t1 x t2"
+    }
 
-    val parser = ???
+    val expParser: CFGParsable[E] = ???
+    val typeParser: Option[CFGParsable[T]] = ???
   }
 
 
@@ -524,14 +546,18 @@ object ExtensibleSimplyTypedLambda {
       }
     }
 
-    def toString(e: E): String = e match {
+    def toStringExp(e: E): String = e match {
       case Inl(t, rType) => s"inl $t: (_ + $rType)"
       case Inr(t, lType) => s"inr $t: ($lType + _)"
       case Case(t, lName, lBody, rName, rBody) =>
         s"case $t of (inl $lName => $lBody) (inr $rName => $rBody)"
     }
+    def toStringType(t: T): String = t match {
+      case TCoprod(t1, t2) => s"$t1 + t2"
+    }
 
-    val parser = ???
+    val expParser: CFGParsable[E] = ???
+    val typeParser: Option[CFGParsable[T]] = ???
   }
 
   case class IntSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -615,14 +641,16 @@ object ExtensibleSimplyTypedLambda {
       }
     }
 
-    def toString(e: E): String = e match {
+    def toStringExp(e: E): String = e match {
       case IntLiteral(i) => s"$i"
       case Plus(a, b) => s"$a + $b"
       case Minus(a, b) => s"$a - $b"
       case Times(a, b) => s"$a * $b"
       case Div(a, b) => s"$a / $b"
     }
+    def toStringType(t: T): String = "Int"
 
-    val parser = ???
+    val expParser: CFGParsable[E] = ???
+    val typeParser: Option[CFGParsable[T]] = ???
   }
 }
