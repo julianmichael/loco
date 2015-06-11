@@ -7,13 +7,13 @@ import CFGParserHelpers._
 
 object ExtensibleSimplyTypedLambdaParsing {
   import ExtensibleSimplyTypedLambda._
-  object VarCategory extends RegexLexicalCategory("[a-zA-Z][a-zA-Z0-9]*")
+  object VarCategory extends RegexLexicalCategory("[a-z][a-zA-Z0-9]*")
   object IntCategory extends RegexLexicalCategory("[0-9]+")
 
   def makeExpParser(g: GlobalExpSpec): ComplexCFGParsable[g.Exp] = {
 
     def expProductionForSpec(spec: ExpSpec): (List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[g.Exp])) = (
-      List(spec.expParser) -> ((c: List[AST[CFGParsable[_]]]) => for {
+      List(spec.expParser) -> (c => for {
         e <- spec.expParser.fromAST(c(0))
       } yield g.makeExp(spec)(e)))
 
@@ -101,4 +101,40 @@ object ExtensibleSimplyTypedLambdaParsing {
       } yield spec.TFunc(t1,t2))
     )
   }
+
+  def makeBoolExpParser(spec: BoolSpec): ComplexCFGParsable[spec.E] =
+      new ComplexCFGParsable[spec.E] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.E])] = Map(
+      List(Terminal("False")) -> (c => for {
+        _ <- Terminal("False").fromAST(c(0))
+      } yield spec.BoolLiteral(false)),
+      List(Terminal("True")) -> (c => for {
+        _ <- Terminal("True").fromAST(c(0))
+      } yield spec.BoolLiteral(true)),
+      List(spec.g.expParser, Terminal("&&"), spec.g.expParser) -> (c => for {
+        t1 <- spec.g.expParser.fromAST(c(0))
+        _ <- Terminal("&&").fromAST(c(1))
+        t2 <- spec.g.expParser.fromAST(c(2))
+      } yield spec.And(t1, t2)),
+      List(spec.g.expParser, Terminal("||"), spec.g.expParser) -> (c => for {
+        t1 <- spec.g.expParser.fromAST(c(0))
+        _ <- Terminal("||").fromAST(c(1))
+        t2 <- spec.g.expParser.fromAST(c(2))
+      } yield spec.Or(t1, t2)),
+      List(Terminal("!"), spec.g.expParser) -> (c => for {
+        _ <- Terminal("!").fromAST(c(0))
+        t <- spec.g.expParser.fromAST(c(1))
+      } yield spec.Not(t))
+    )
+  }
+
+  def makeBoolTypeParser(spec: BoolSpec): ComplexCFGParsable[spec.T] =
+      new ComplexCFGParsable[spec.T] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.T])] = Map(
+      List(Terminal("Bool")) -> (c => for {
+        v <- Terminal("Bool").fromAST(c(0))
+      } yield spec.TBool)
+    )
+  }
+
 }

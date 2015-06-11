@@ -10,10 +10,13 @@ class ExtensibleSimplyTypedLambdaTest extends FunSuite {
     val g = GlobalExpSpec(List(
       VarSpec,
       FuncSpec,
-      UnitSpec))
+      UnitSpec,
+      BoolSpec))
     implicit val parser = g.expParser
     type Exp = g.Exp
-    val idUnit = parseUnique[Exp]("\\ x : Unit . x")
-    println(idUnit)
+    val neg = parseForced[Exp]("(\\ x : Bool . !!x) False")
+    def steps(e: Exp): Stream[Exp] = e #:: steps(g.step(e))
+    println(g.smallStepEval(neg))
+    // println(steps(neg).take(5).toList)
   }
 }

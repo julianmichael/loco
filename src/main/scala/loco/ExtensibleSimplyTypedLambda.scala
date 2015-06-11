@@ -201,7 +201,7 @@ object ExtensibleSimplyTypedLambda {
         apperType <- g.typeWithEnv(env, t1).right
         appeeType <- g.typeWithEnv(env, t2).right
         resultType <- (apperType.typ match {
-          case TFunc(ante, consq) if ante == appeeType => Right(consq)
+          case TFunc(ante, consq) if ante.typ == appeeType.typ => Right(consq)
           case x => Left(TypeError(s"tried to apply type $x to $appeeType"))
         }).right
       } yield resultType
@@ -232,6 +232,7 @@ object ExtensibleSimplyTypedLambda {
     case class BoolLiteral(b: Boolean) extends BoolExp
     case class And(a: g.Exp, b: g.Exp) extends BoolExp
     case class Or(a: g.Exp, b: g.Exp) extends BoolExp
+    case class Not(t: g.Exp) extends BoolExp
 
     object TBool
 
@@ -247,6 +248,7 @@ object ExtensibleSimplyTypedLambda {
       case BoolLiteral(_) => Set.empty[String]
       case And(a, b) => g.freeVars(a) ++ g.freeVars(b)
       case Or(a, b) => g.freeVars(a) ++ g.freeVars(b)
+      case Not(a) => g.freeVars(a)
     }
 
     def substitute(sub: g.Exp, name: String, target: E): g.Exp = {
@@ -255,6 +257,7 @@ object ExtensibleSimplyTypedLambda {
         case b@BoolLiteral(_) => makeExp(b)
         case And(a, b) => makeExp(And(doSub(a), doSub(b)))
         case Or(a, b) => makeExp(Or(doSub(a), doSub(b)))
+        case Not(a) => makeExp(Not(doSub(a)))
       }
     }
 
@@ -272,6 +275,11 @@ object ExtensibleSimplyTypedLambda {
         result <- (if(leftType.typ == TBool && rightType.typ == TBool) Right(makeType(TBool))
                   else Left(TypeError(s"tried to || terms of type $leftType and $rightType"))).right
       } yield result
+      case Not(t) => for {
+        innerType <- g.typeWithEnv(env, t).right
+        result <- (if(innerType.typ == TBool) Right(makeType(TBool))
+                  else Left(TypeError(s"tried to ! term of type $innerType"))).right
+      } yield result
     }
 
     def step(t: E): g.Exp = makeExp(t match {
@@ -284,18 +292,24 @@ object ExtensibleSimplyTypedLambda {
       case Or(v1, t2) if !g.isValue(t2) => Or(v1, g.step(t2))
       case Or(v1, v2) => (v1.exp, v2.exp) match {
         case (BoolLiteral(b1), BoolLiteral(b2)) => BoolLiteral(b1 || b2)
-    }
+      }
+      case Not(t) if !g.isValue(t) => Not(g.step(t))
+      case Not(v) => v.exp match {
+        case BoolLiteral(b) => BoolLiteral(!b)
+      }
     })
 
     def toStringExp(e: E): String = e match {
-      case BoolLiteral(b) => s"$b"
+      case BoolLiteral(false) => "False"
+      case BoolLiteral(true) => "True"
       case And(a, b) => s"$a && $b"
       case Or(a, b) => s"$a || $b"
+      case Not(t) => s"!$t"
     }
     def toStringType(t: T): String = "Bool"
 
-    val expParser: CFGParsable[E] = ???
-    val typeParser: Option[CFGParsable[T]] = ???
+    val expParser: CFGParsable[E] = makeBoolExpParser(this)
+    val typeParser: Option[CFGParsable[T]] = Some(makeBoolTypeParser(this))
   }
 
   case class CondSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
