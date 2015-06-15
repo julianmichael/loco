@@ -5,4 +5,6 @@ package object loco {
   // stdlib bug; should just use filterNot when they make lazy again
   def freshVar(prohib: Set[String]) = nats.filter(!prohib(_)).head
 
+  case class TypeError(message: String)
+
 }

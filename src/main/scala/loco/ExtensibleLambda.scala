@@ -1,16 +1,13 @@
 package loco
 
 
-object ExtensibleSimplyTypedLambda {
+object ExtensibleLambda {
   // In this file, I try to solve the Expression Problem.
   // I don't expect it to work.
 
-  import ExtensibleSimplyTypedLambdaParsing._
+  import ExtensibleLambdaParsing._
   import molt.syntax.cfg.parsable._
   import molt.syntax.cfg._
-
-
-  case class TypeError(message: String)
 
   case class GlobalExpSpec(
     expSpecMakers: List[(GlobalExpSpec => ExpSpec)]) {
@@ -360,8 +357,8 @@ object ExtensibleSimplyTypedLambda {
     }
     def toStringType(t: T): String = t.toString
 
-    val expParser: CFGParsable[E] = ???
-    val typeParser: Option[CFGParsable[T]] = ???
+    val expParser: CFGParsable[E] = makeCondExpParser(this)
+    val typeParser: Option[CFGParsable[T]] = None
   }
 
   case class UnitSpec(override val g: GlobalExpSpec) extends ExpSpec(g) {
@@ -664,7 +661,7 @@ object ExtensibleSimplyTypedLambda {
     }
     def toStringType(t: T): String = "Int"
 
-    val expParser: CFGParsable[E] = ???
-    val typeParser: Option[CFGParsable[T]] = ???
+    val expParser: CFGParsable[E] = makeIntExpParser(this)
+    val typeParser: Option[CFGParsable[T]] = Some(makeIntTypeParser(this))
   }
 }

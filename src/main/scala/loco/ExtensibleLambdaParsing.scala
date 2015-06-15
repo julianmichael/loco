@@ -5,8 +5,8 @@ import molt.syntax.cfg._
 import CFGParserHelpers._
 
 
-object ExtensibleSimplyTypedLambdaParsing {
-  import ExtensibleSimplyTypedLambda._
+object ExtensibleLambdaParsing {
+  import ExtensibleLambda._
   object VarCategory extends RegexLexicalCategory("[a-z][a-zA-Z0-9]*")
   object IntCategory extends RegexLexicalCategory("[0-9]+")
 
@@ -173,7 +173,18 @@ object ExtensibleSimplyTypedLambdaParsing {
       List(Terminal("inr"), spec.g.expParser, Terminal(":"), Terminal("_"), Terminal("+"), spec.g.typeParser) -> (c => for {
         term <- spec.g.expParser.fromAST(c(1))
         lType <- spec.g.typeParser.fromAST(c(5))
-      } yield spec.Inr(term, lType))
+      } yield spec.Inr(term, lType)),
+      List(Terminal("case"), spec.g.expParser, Terminal("of"),
+        Terminal("("), Terminal("inl"), VarCategory,
+        Terminal("=>"), spec.g.expParser, Terminal(")"),
+        Terminal("("), Terminal("inr"), VarCategory,
+        Terminal("=>"), spec.g.expParser, Terminal(")")) -> (c => for {
+        term <- spec.g.expParser.fromAST(c(1))
+        lName <- VarCategory.fromAST(c(5))
+        lBody <- spec.g.expParser.fromAST(c(7))
+        rName <- VarCategory.fromAST(c(11))
+        rBody <- spec.g.expParser.fromAST(c(13))
+      } yield spec.Case(term, lName, lBody, rName, rBody))
     )
   }
 
@@ -184,6 +195,61 @@ object ExtensibleSimplyTypedLambdaParsing {
         t1 <- spec.g.typeParser.fromAST(c(0))
         t2 <- spec.g.typeParser.fromAST(c(2))
       } yield spec.TCoprod(t1,t2))
+    )
+  }
+
+  def makeIntExpParser(spec: IntSpec): ComplexCFGParsable[spec.E] =
+      new ComplexCFGParsable[spec.E] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.E])] = Map(
+      List(Numeric) -> (c => for {
+        is <- Numeric.fromAST(c(0))
+      } yield spec.IntLiteral(is.toInt)),
+      List(Terminal("-"), spec.g.expParser) -> (c => for {
+        _ <- Terminal("-").fromAST(c(0))
+        is <- Numeric.fromAST(c(1))
+      } yield spec.IntLiteral(is.toInt * -1)),
+      List(spec.g.expParser, Terminal("+"), spec.g.expParser) -> (c => for {
+        t1 <- spec.g.expParser.fromAST(c(0))
+        _ <- Terminal("+").fromAST(c(1))
+        t2 <- spec.g.expParser.fromAST(c(2))
+      } yield spec.Plus(t1, t2)),
+      List(spec.g.expParser, Terminal("-"), spec.g.expParser) -> (c => for {
+        t1 <- spec.g.expParser.fromAST(c(0))
+        _ <- Terminal("-").fromAST(c(1))
+        t2 <- spec.g.expParser.fromAST(c(2))
+      } yield spec.Minus(t1, t2)),
+      List(spec.g.expParser, Terminal("*"), spec.g.expParser) -> (c => for {
+        t1 <- spec.g.expParser.fromAST(c(0))
+        _ <- Terminal("*").fromAST(c(1))
+        t2 <- spec.g.expParser.fromAST(c(2))
+      } yield spec.Times(t1, t2)),
+      List(spec.g.expParser, Terminal("/"), spec.g.expParser) -> (c => for {
+        t1 <- spec.g.expParser.fromAST(c(0))
+        _ <- Terminal("/").fromAST(c(1))
+        t2 <- spec.g.expParser.fromAST(c(2))
+      } yield spec.Div(t1, t2))
+    )
+  }
+
+  def makeIntTypeParser(spec: IntSpec): ComplexCFGParsable[spec.T] =
+      new ComplexCFGParsable[spec.T] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.T])] = Map(
+      List(Terminal("Int")) -> (c => for {
+        v <- Terminal("Int").fromAST(c(0))
+      } yield spec.TInt)
+    )
+  }
+
+  def makeCondExpParser(spec: CondSpec): ComplexCFGParsable[spec.E] =
+      new ComplexCFGParsable[spec.E] {
+    final override val synchronousProductions: Map[List[CFGParsable[_]], (List[AST[CFGParsable[_]]] => Option[spec.E])] = Map(
+      List(Terminal("if"), spec.g.expParser,
+        Terminal("then"), spec.g.expParser,
+        Terminal("else"), spec.g.expParser) -> (c => for {
+        cond <- spec.g.expParser.fromAST(c(1))
+        ifSo <- spec.g.expParser.fromAST(c(3))
+        ifElse <- spec.g.expParser.fromAST(c(5))
+      } yield spec.Cond(cond, ifSo, ifElse))
     )
   }
 
